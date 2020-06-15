@@ -1,0 +1,484 @@
+---
+title: "GP predictions"
+author: "Rachid elkhayat"
+date: "6/13/2020"
+output: pdf_document
+---
+
+# The Outline                                                
+
+**1.	Introduction** <br/> 
+
+    -The project goal  
+    -The key steps implemented  
+
+**2.  Method and Analysis** <br/>  
+
+    -Data preparation 
+    -Data exploration and visualization
+    -Feature Engineering 
+    -Creating function to process the predictions
+    -Creating train/test datasets
+    -Creating Our models
+    
+**3.  The results **  <br/>  
+
+    -Visualizing in a table the accuracy of our models  
+    -Plotting the cummlative returns
+
+
+**4.  Conclusion**   <br/> 
+
+
+***
+
+
+# 1. Introduction 
+
+Gold has been always viewed as the symbol of wealth since the ancient times of the human history, The demand of gold is raising day by day, Its price is affected by many factors which makes it hard to be predicted.
+Various studies have developed different predictive models based on different techniques and factors. Some studies try to make predictions based on historical prices while others has a different approach by explaining the correlations between the prices of gold with respect to a various of economic factors.
+
+For a long period of time, the price of gold was fixed. After 1968, the price of gold began to be determined by the market. Gold trading has always been considered attractive due to its historic volatility. On the trading platforms the candles represent the open and close price in within the same day. Different people use different strategies in trading, usually individuals open and close positions within day or days. However, the bigger companies positions can be opened for months or years. So we can say that the duration of trade positions can vary from one day to years period, In our project here we will build a model that will aim to predict the next day position based on the previous data.
+
+
+Defining The Candle Types: 
+Candle types represents the difference between the open and close price, while the length of the candle represent the difference in the value between both positions. Candles help us to understand easly the fluctuation in the price and they are represenetd in three types:- 
+
+“Green candles” are the candles that represent the “bull” where the closing price is higher than the opening price.
+“Red candles” are the candles that represent the “bear” where the closing price is lower than the opening price.
+“Doji Candles” are the candles that don’t have a candle body however they have an indicative wicks that can help in predictions.
+
+
+Every candle we will see represents a day with its opening and closing price. For every day we have the following information:
+-Open price
+-High price
+-Low price 
+-Close price 
+
+
+## The project goal  <br />
+
+We will implement multiple methods to predict the "next day candle type" using differenet Machine learning
+models, We will train our models based on previous data that we will download from yahoo finance. Our goal is to achieve an accuracy over 50% based on which we will determine predictive capability of our models.
+
+
+## The ket steps implement 
+
+     - Data exploratory and Analysis 
+     - Modeling and testing 
+      Naive bayes Model   
+      Support vector Model 
+      Random Forest Model   
+     - Models performance and accuracy
+
+
+***
+
+# 2.  Method and Analysis** <br/>  
+
+## Data preparation 
+
+The data that we are working on in this project is a part of the dataset that we have downloaded from yahoo finanace, we decided to start the predictions starting from 2018 till May2020.
+
+After installing the required packages and adding the libraries, we will manipulate the downloaded dataset to transform it to the format that will make it easy for us to work with.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Adding the required packages & libraries
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(naivebayes)) install.packages("naivebayes", repos = "http://cran.us.r-project.org")
+if(!require(quantmod)) install.packages("quantmod", repos = "http://cran.us.r-project.org")
+library(quantmod) # chartseries
+library(dplyr)
+library(tidyverse)
+library(TTR)  # EMAs
+library(ggplot2)
+library(randomForest) #RF
+library(e1071)  # SVM
+library(naivebayes) # NB
+library(xts) 
+library(knitr)
+
+#Downloading our dataset as csv file format and changing the type into xts file
+#Dowloading and importing  the data from the github repository 
+urlfile="https://raw.githubusercontent.com/rwelkh/price-prediction--hrvdx/master/goldds.csv"
+goldds0<-read_csv(url(urlfile))
+#Checking how thw data is structured
+str(goldds0)
+#changing the columns names
+names(goldds0)<- c("Date", "Open", "High", "Low", "Close")
+#Change the file from CSV to xts format
+gold_xts <- xts(goldds0[,-1], order.by = goldds0$Date)
+#We will use only the last two years in this project.
+#we will train our model based on the previous two years hence, we will slice the data accordingly.
+#will slice the data starting from January 1, 2018 till june 1, 2020
+gold_xts <- gold_xts["20180101/20200601"]
+#Plot the goldprices chart
+rm(goldds0, urlfile)
+chartSeries(gold_xts, theme= 'white')
+```
+
+
+## Data exploration and visualization
+
+Since 2018 the price of the gold is moving in an upward trend, with a huge plunge in march 2020, the plunge has been followed with a surge in the same month.
+
+The Green candles are called "bull candles" and it represent the increase in the price, where the number of buyers are more than the number of sellers. while the orange candles are called "bear candles" which represent the descrease in the price, where the number of sellers are more than the number of buyers.
+while Doji,  is a name for a session in which the candlestick has an open and close price that are virtually equal.
+
+**Exponential moving average (EMA)**
+ An exponential moving average (EMA) is a type of moving average (MA) that places a greater weight and significance on the  most recent data points. It is a technical indicator that is used to produce buy and sell signals based on crossovers and  divergences from the historical average.
+We can use several different EMA lengths of moving averages, in our project we will use 7-days and 20 days.
+
+EMA gives more weight to recent prices and are calculated by applying a percentage of the current day closing price to the previous day(s) moving average.
+
+ The EMA is calculated in three steps:
+1- Compute the SMA - simply the mean of closing price for the selected period
+2- Calculate the multiplier for weighting the EMA- Equals to 2/timeperiod +1
+3- Calculate the current EMA
+
+
+$$EMA= (Close - previous EMA) * (2 / WeightingMultiplier+1) + previous EMA$$ 
+
+In the below graphs we can clearly see the relation beween the price and the indicators, both indicators are moving with the price.
+EMA as one of the main indicator for predicting the price as it is more reactive to the price change compared to SMA. When the market is in a strong and sustained uptrend, the EMA indicator line will also show an uptrend and vice-versa.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# 3-Creating -Exponential moving averages (EMA)------------------------------------------------
+#Creating the EMA for 7 days 
+gold_xts$ema7 <- EMA(gold_xts$Close, n = 7)
+#Creating the EMA for 20 days
+gold_xts$ema20 <- EMA(gold_xts$Close, n = 20)
+#Since the EMA is based on the previous data we will notice that the first 20 rows will include NA values in the EMA20 column and 7 NA Values in the EMA7 & column.
+gold_xts <- gold_xts[20:length(gold_xts$Open),]
+```
+
+ 
+The gold price started at around 1300 USD in 2018 and moved up the next two years to reach a value of more than 1700 USD, one of the most obvious observation that we can identify is the major drop in 2020 which was quickly recovered and the price continue its increase afterwards.   
+
+Plotting a subset of the data starting from 2020 in order to visualize the EMAs and track their performance.
+
+```{r message=FALSE, warning=FALSE}
+#Plotting a subset of the data starting from 2020 in order to visualize the EMAs.
+min2020<- min(gold_xts['2020']$Close)
+max2020<- max(gold_xts['2020']$Close)
+#Plotting the EMAs
+chartSeries(gold_xts, subset = "2020-01::",theme = "white")
+addEMA( n = 7, col = "purple")
+addEMA( n = 20, col = "red")
+
+```
+
+the graphs above shows that the EMA7 line is more reactive to the changes compared with the EMA20. as it accomodate the changes faster and gives that a better indication for the short term trade.
+
+ 
+ 
+## Feature Engineering 
+
+We will use feature engineering to extract features from data that will help us entrepret, discover new findings, create the data that would be useful for our machine learning models.
+
+Our main goal in this project is to predict whether the next day candle is bull/bear,for that purpose we will create the below features in a separate data frame that will help us with our predictions:
+
+- Current candle type - the candle type for the current day 
+- Candle previous day - the candle type of the previous day
+- Doji - a type of candles with minimum movement in the price within the day(neutral)
+- Position of close price to ema7 -(above/below)
+- Position of close price to ema20 -(above/below)
+- Candle next day - our main target (model predictions)
+- Current return  (close price - open price)
+- Next day return (-/+)
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#the type of the candle for the current day 
+CurrentCandle<- data.frame(ifelse(gold_xts$Close > gold_xts$Open, "bull", "bear"))
+#We will use lag to get the previous day closing price
+#PreviousCandle will have NA as the first row value, we will treat that after creating all the features
+PreviousCandle <- data.frame(lag(CurrentCandle$Close, n = 1))
+#we will use lead to get the next day price, it is the opposit of lag 
+#NextdayCandle 
+NextDayCandle <- data.frame(lead(CurrentCandle$Close, n = 1))
+#We will set a threshold  of 0.45 where we consider the candle is Doji, 
+#doji implies that there is no significant surge or plunge in the price
+Doji <- data.frame(ifelse(abs(gold_xts$Close - gold_xts$Open) < 0.45, "yes", "no"))
+#Creating an indication for the position of ema7 if it is above or below the price
+#ma7Po
+PositionToEma7 <- data.frame(ifelse(gold_xts$Close > gold_xts$ema7, "above", "below"))
+#Creating an indication for the position of ema20 if it is above or below the price
+#price$Ema20Position
+PositionToEma20 <- data.frame(ifelse(gold_xts$Close > gold_xts$ema20, "above", "below"))
+#EMA to EMA 20 position 
+#Ema7toEma20Position
+Ema7ToEma20_ <- data.frame(ifelse(gold_xts$ema7 > gold_xts$ema20, "above", "below"))
+# to check the profit and loss
+DailyReturn <- data.frame(abs(gold_xts$Close - gold_xts$Open))
+# prediction of return value for next day
+NextDayReturn <- lead(DailyReturn$Close, n = 1)
+
+#Creating the dataframe with all the features as columns
+gold_features <- data.frame(CurrentCandle, PreviousCandle,
+                            Doji, PositionToEma7, PositionToEma20, Ema7ToEma20_,
+                            DailyReturn, NextDayReturn, NextDayCandle)
+
+#Naming the dataframe columns
+names(gold_features) <- c("CurrentCandle", "PreviousCandle",
+                          "Doji", "PositionToEma7", "PositionToEma20", "Ema7ToEma20_",
+                          "DailyReturn", "NextDayReturn", "NextDayCandle")
+
+#Removing the first raw that contains NA
+gold_features <- gold_features[2:length(gold_features$CurrentCandle),]
+
+#The summary shows us that we have NA values in two features, these Nas are result of the nextdayreturn and nextdaycandle. and once we look at the table we notice that the NAs are in the last row, we wont include the last line in the test DS.
+str (gold_features)
+
+#Removing the Dataframes
+rm("CurrentCandle", "PreviousCandle",
+   "Doji", "PositionToEma7", "PositionToEma20", "Ema7ToEma20_",
+   "DailyReturn", "NextDayReturn", "NextDayCandle")
+```
+ 
+ 
+ 
+## Creating train/test datasets
+
+Splitting the data in to train and test datasets, Test set indicies 30%,#Training set 70%, we need to keep in mind that the data when dealing with time series cannot be splitted in an arbitrary way. we need to take the chronological order into consideration.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Training set 70% 
+TrainIndicies <- 1:419
+#Test set indicies 30%, we will take all not include the last line of the data as it contains NAs
+TestIndicies<- 420:579
+train <- gold_features[TrainIndicies,]
+test <- gold_features[TestIndicies,]
+#The summary shows us that there is no NAs, the bear candles outcount the bull by almost 100 times
+summary(train)
+#The summary shows us that there is no NAs, and the bear and  bull candle count are not very far from each others.
+#We can conclude that the market downtrend in the train set is much significant than the test set.
+summary(test)
+#plotting the data gold price data set based on the train/test indices
+#----
+# the graph in the train dataset shows a down trend in 2018 and then and upward trend starting 2019..
+plot(gold_xts$Close[TrainIndicies,])
+# we notice that the prices are higher in the test dataset with a big drop and recovery that occured in march 2020
+plot(gold_xts$Close[TestIndicies,])
+```
+    
+    
+## Creating function to process the predictions    
+
+Creating a function for processing predictions, With this function we will create three features (pred , prediReturn, cumReturn) that we will include in the new dataframe of the models.
+
+The three feature are:
+pred: Our model predictions
+predireturn: to determine wether our predictions lead to positive or negative returns.
+cum return: to calculate the cummulative returns for each model.
+
+```{r warning=FALSE}
+
+predictedReturn <- function(df, pred) { 
+  #pred is our predictions from the machine learning model
+  df$pred <- pred
+  # transforming to negative value if our prediction is wrong 
+  df$prediReturn <- ifelse(df$NextDayCandle != df$pred, -df$NextDayReturn, df$NextDayReturn)
+  # calculating the cummulative sum 
+  df$cumReturn <- cumsum(df$prediReturn)
+  return(df)
+}
+```
+    
+## Creating Our models
+
+Before we start creating the Model we will define the Accuracy that we will take it as reference to evaluate the different models performance. 
+
+- Model Performance and Accuracy -
+We will be assessing our data buy the percentage of accuracy that results from each model, the accuracy will be calculated by obtaining the error and subtracting the outcome by one. 
+below is the Accuracy equation: 
+
+$$ Accuracy = 1 - ModelError$$
+
+**Model 1-Naive Bayes Model-**
+
+In brief, The principle behind Naive Bayes is the Bayes theorem. It is used to calculate the conditional probability, which is the probability of an event occurring based on information about the events in the past. Mathematically, the Bayes theorem is represented as:
+
+$$P(A_i|B)=P(B|A_i)P(A_i)/P(B)$$
+
+ $P(A|B)$ is the posterior probability of C given B
+ $P(A)$ is the prior probability of class
+ $P(B|A)$ is the likelihood which is the probability of predictor given class.
+ $P(B)$ is the prior probability of the predictor
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# implementing the model using naive bayes function
+Model_1 <- naive_bayes(NextDayCandle ~., data = train)
+#prediction the outcome on the test set
+Model_1_predictions <- suppressWarnings(predict(Model_1,test))
+#passing the outcome to the function "predictedReturn" that we have created, in order to prepare the data as we need it then add it to a new Dataset called " nb.test"
+naivebayes_ds<-predictedReturn(test, Model_1_predictions)
+# plotting the returns in a graph, as we can see from the graph there is no consistance trend, our predictions seems to be very unconsistance in terms of accurancy.
+plot(naivebayes_ds$prediReturn, type = "l")  
+# plotting the accumulated return over the entire period in a graph  to have a clear picture of the entire equity status.
+plot(naivebayes_ds$cumReturn, type = "l")  
+#the confusion matrix to check the sensitivity and specificity.
+naivebayes_CM <- table(naivebayes_ds$NextDayCandle,naivebayes_ds$pred)
+#printing the results
+naivebayes_CM %>% kable()
+#calculating accuracy
+# we will calculate the error percentage, where the prediction is not match the given values of the next day.
+Model1_error = mean(naivebayes_ds$NextDayCandle != naivebayes_ds$pred, na.rm=TRUE)
+#Model evaluation by calculating accuracy
+NB_model_accuracy<- 1- Model1_error
+NB_model_accuracy
+#Adding the results to comparison table
+accuracy_results <- data_frame(Method = "Naive bayes Model", Accuracy = NB_model_accuracy)
+
+#--------------------------------------------------------------------------------------------
+```
+
+The accuracy value shows that our predictions are not reliable enough, we also could see that by looking at the cumulated returns graph, the big plungs has affected our prediction as it makes it very challenging for the model to predict the right candle type.
+We will try to create a model that can accomodate the changes in a better way and result in better outcome.
+
+
+**Model 2 -Support Vector Machine-**
+Ee will use SVM to classify our data points into either bull/ bear, We will need to find the Hyperplane or in other words the line between the two classes, the hyperplane is an (n minus 1)-dimensional subspace for an n-dimensional space
+The Hyperplane separates the features that share the same property, In our case we will predict the features wethers it is bull/bear.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# - b- Supportvector Model ---------------------------------------------------------------
+Model_2<- svm(NextDayCandle ~., data = train, kernel = "radial" )
+## gives kernel used: "radial" implying it did some basic transforms.
+#fitting our model
+Model_2_predictions <-predict(Model_2, test)
+#finding the predicted outcome.
+Supportvector_ds <- predictedReturn(test, Model_2_predictions)
+# plotting the returns
+plot(Supportvector_ds$prediReturn, type = "l")
+# plotting the accumulated returns
+plot(Supportvector_ds$cumReturn, type = "l")
+
+#confusion matrix
+Supportvector_CM <- table(Supportvector_ds$NextDayCandle,Supportvector_ds$pred)
+#printing the results
+Supportvector_CM %>% kable()
+
+#Model evaluation by calculating accuracy
+SVM_error <- mean(Supportvector_ds$NextDayCandle != Supportvector_ds$pred)
+SVM_Accuracy <- 1 - SVM_error
+SVM_Accuracy
+#Adding the results to comparison table
+accuracy_results <- bind_rows(accuracy_results ,
+                              data_frame(Method="Support vector Model",
+                                         Accuracy = SVM_Accuracy ))
+
+```
+
+The SVM model accuracy shows that it is not the right model as it is still under our target of 50%. In the next section will use a different machine learning method to try to achieve our Goal
+
+
+**Model 3 -Random Forest-** 
+
+In a nuttshell,  Random Forests grows many classification trees, It is a classification algorithm consisting of many decisions trees. It uses bagging and feature randomness when building each individual tree to try to create an uncorrelated forest of trees whose prediction by committee is more accurate than that of any individual tree.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# - c- Random Forest model---------------------------------------------------------------
+#Fitting the random forest model
+Model_3 <- randomForest(NextDayCandle ~., data = train)
+# bydefault it the number of tree will be 500
+# We will create a dataframe that will contain all the errors generated per iteration.
+
+# Tuning to find out the numbers of trees.
+obb.error.data<- data.frame(
+  Tress= rep(1:nrow(Model_3$err.rate), times=3),
+  Type=  rep(c("OOB","bull", "bear"), each=nrow(Model_3$err.rate)),
+  Error= c(Model_3$err.rate[,"OOB"],
+           Model_3$err.rate[,"bull"],
+           Model_3$err.rate[,"bear"])
+)
+
+# Plotting the OOB error rate graph, we can observe that the error rate doesnt have significant fluctuations or up/down trend by increasing the number of trees. hence we will keep the default tress number of 500.
+ggplot(data=obb.error.data, aes(x=Tress, y= Error)) +
+  geom_line(aes(color=Type))
+
+#finding the predicted outcome.
+Model_3_predictions <- predict(Model_3, test)
+#results
+randomForest_ds <- predictedReturn(test, Model_3_predictions)
+#Plotting the predition returns
+plot(randomForest_ds$prediReturn, type = "l")
+#plotting cumReturn
+plot(randomForest_ds$cumReturn, type = "l")
+
+# we will plot the " variable of importance" to identify the variable with the most significant impact on our predictions
+# NextDayReturn and the Daily return has the most significant importance among the other features.
+varImpPlot(Model_3)
+#confusion matrix
+randomForest_CM <- table(randomForest_ds$NextDayCandle, randomForest_ds$pred)
+randomForest_CM %>% kable()
+#Model evaluation by calculating accuracy
+RF_error <- mean(randomForest_ds$NextDayCandle != randomForest_ds$pred)
+RF_Accuracy <- 1 - RF_error
+RF_Accuracy
+
+#Adding the results to comparison table
+accuracy_results <- bind_rows(accuracy_results ,
+                              data_frame(Method="Random Forest Model",
+                                         Accuracy = RF_Accuracy ))
+```
+
+By plotting the OOB error rate graph, we can observe that the error rate doesnt have significant fluctuations or up/down trend by increasing the number of trees, Hence we will keep the default tress number of 500.
+The variable of importance plot we can identify that the variable with the most significant impact on our predictions is "NextDayReturn" and the "DailyReturn"
+
+The Accuracy of the model exceeded the 50% which was our target for this project. 
+
+
+
+
+# 3- The Results
+
+## Visualizing in a table the accuracy of our models  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+accuracy_results %>% kable()
+```
+
+
+## Plotting the cummlative returns
+Creating a data frame that includes all the cummulative returns, in order to know how the equity is fluctuating and wether we are going to make gain by using the models.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+nb_cumReturn <- naivebayes_ds$cumReturn
+svm_cumReturn <- Supportvector_ds$cumReturn
+rf_cumReturn <- randomForest_ds$cumReturn
+aggregated_cumReturn <- data.frame(c(1:length(nb_cumReturn)), nb_cumReturn, svm_cumReturn, rf_cumReturn)
+
+ggplot() +
+  geom_line(aes(aggregated_cumReturn[,1], nb_cumReturn, colour = "nb"))+
+  geom_line(aes(aggregated_cumReturn[,1], svm_cumReturn, colour = "svm"))+
+  geom_line(aes(aggregated_cumReturn[,1], rf_cumReturn, colour = "rf"))+
+  ylab("Cummulative returns (x1000 USD)")
+
+```
+
+
+# 4-Conclusion  
+
+In the above chart we can see the equity curve for the different algorithems , with Naive bais method the risk of losing 200k as we can see in the graph and then end up with 50k on the positive end, we can conclude that it is a very risky and unreliable model in this case. while SVM model for sure will lead to bigger loses. 
+Random forest doesnt look like the perfect model as well however it managed to sustain the equity in the positive end more than the other two models and it lead to  better results
+
+
+
+#-----------------------------------------------------------------Thank you ---------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
